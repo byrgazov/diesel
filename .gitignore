@@ -14,3 +14,4 @@ diesel.geany
 bin
 build
 dist
+tmp

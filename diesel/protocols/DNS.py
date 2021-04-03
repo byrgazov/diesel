@@ -25,12 +25,13 @@ _search_domains.extend(map(lambda n: str(n)[:-1], _resolv_conf.search))
 
 del _resolv_conf
 
+
 class DNSClient(UDPClient):
     """A DNS client.
 
     Uses nameservers from /etc/resolv.conf if none are supplied.
-
     """
+
     def __init__(self, servers=None, port=53):
         if servers is None:
             self.nameservers = servers = _local_nameservers
@@ -48,14 +49,18 @@ class DNSClient(UDPClient):
             * Timeout if the request to all servers times out.
             * NotFound if we get a response from a server but the name
               was not resolved.
-
         """
+
         names = deque([name])
+
         for n in _search_domains:
             names.append(('%s.%s' % (name, n)))
+
         start = time.time()
         timeout = orig_timeout
+
         r = None
+
         while names:
             n = names.popleft()
             try:
@@ -66,7 +71,9 @@ class DNSClient(UDPClient):
                     raise
             else:
                 break
+
         assert r is not None
+
         return r
 
     def _actually_resolve(self, name, timeout):
@@ -77,13 +84,16 @@ class DNSClient(UDPClient):
                 self.addr = server
                 query = make_query(name, A)
                 send(query.to_wire())
+
                 start = time.time()
                 remaining = timeout
+
                 while True:
                     # Handle the possibility of responses that are not to our
                     # original request - they are ignored and we wait for a
                     # response that matches our query.
                     item, data = first(datagram=True, sleep=remaining)
+
                     if item == 'datagram':
                         response = from_wire(data)
                         if query.is_response(response):
@@ -95,10 +105,10 @@ class DNSClient(UDPClient):
                             # Not a response to our query - continue waiting for
                             # one that is.
                             remaining = remaining - (time.time() - start)
+
                     elif item == 'sleep':
                         break
             else:
                 raise Timeout(name)
         finally:
             self.addr = self.primary
-

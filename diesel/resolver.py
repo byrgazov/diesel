@@ -1,6 +1,4 @@
-'''Fetches the A record for a given name in a green thread, keeps
-a cache.
-'''
+"""Fetches the A record for a given name in a green thread, keeps a cache."""
 
 import os
 import random
@@ -38,10 +36,10 @@ def load_hosts():
 load_hosts()
 
 def resolve_dns_name(name):
-    '''Uses a pool of DNSClients to resolve name to an IP address.
+    """Uses a pool of DNSClients to resolve name to an IP address.
 
     Keep a cache.
-    '''
+    """
 
     # Is name an IP address?
     try:

@@ -1,18 +1,18 @@
-# vim:ts=4:sw=4:expandtab
-'''Simple http client example.
+"""Simple http client example.
 
 Check out crawler.py for more advanced behaviors involving
 many concurrent clients.
-'''
+"""
 
-from diesel import Application, Loop, log, quickstart, quickstop
+from diesel import Application, Loop, quickstart, quickstop
+from diesel import log
 from diesel.protocols.http import HttpClient
 
 def req_loop():
-    for path in ['/Py-TOC', '/']:
-        with HttpClient('www.jamwt.com', 80) as client:
-            heads = {'Host' : 'www.jamwt.com'}
-            log.info(str(client.request('GET', path, heads)))
+    for path in ['/contact.shtml', '/']:
+        with HttpClient('www.opennet.ru', 80) as client:
+            headers = {'Host': 'opennet.ru'}
+            log.info(str(client.request('GET', path, headers)))
     quickstop()
 
 log = log.name('http-client')
