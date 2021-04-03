@@ -32,5 +32,5 @@ def print_greenlet_stacks():
     for stack, count in sorted(stacks.iteritems(), key=itemgetter(1)):
         loop = loops[stack]
         loop_id = address_stripper.sub('', str(loop.loop_callable))
-        print '[%d] === %s ===' % (count, loop_id)
-        print stack
+        print('[%d] === %s ===' % (count, loop_id))
+        print(stack)

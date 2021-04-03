@@ -1,7 +1,7 @@
-# vim:ts=4:sw=4:expandtab
-'''Core implementation/handling of coroutines, protocol primitives,
+"""Core implementation/handling of coroutines, protocol primitives,
 scheduling primitives, green-thread procedures.
-'''
+"""
+
 import os
 import socket
 import traceback
@@ -19,53 +19,56 @@ from diesel import runtime
 from diesel import log
 from diesel.events import EarlyValue
 
+
 class ConnectionClosed(socket.error):
-    '''Raised if the client closes the connection.
-    '''
+    """Raised if the client closes the connection."""
+
     def __init__(self, msg, buffer=None):
-        socket.error.__init__(self, msg)
+        super().__init__(msg)
         self.buffer = buffer
 
+
 class ClientConnectionClosed(socket.error):
-    '''Raised if the remote server (for a Client call)
-    closes the connection.
-    '''
+    """Raised if the remote server (for a Client call) closes the connection."""
+
     def __init__(self, msg, buffer=None, addr=None, port=None):
-        socket.error.__init__(self, msg)
+        super().__init__(msg)
         self.buffer = buffer
         self.addr = addr
         self.port = port
 
     def __str__(self):
-        s = socket.error.__str__(self)
+        s = super().__str__()
         if self.addr and self.port:
             s += ' (addr=%s, port=%s)' % (self.addr, self.port)
         return s
 
+
 class ClientConnectionError(socket.error):
-    '''Raised if a client cannot connect.
-    '''
+    """Raised if a client cannot connect."""
+
 
 class ClientConnectionTimeout(socket.error):
-    '''Raised if the client connection timed out before succeeding.
-    '''
+    """Raised if the client connection timed out before succeeding."""
+
 
 class LoopKeepAlive(Exception):
-    '''Raised when an exception occurs that causes a loop to terminate;
-    allows the app to re-schedule keep_alive loops.
-    '''
+    """Raised when an exception occurs that causes a loop to terminate;
+    allows the app to re-schedule keep_alive loops."""
+
 
 class ParentDiedException(Exception):
-    '''Raised when the parent (assigned via fork_child) has died.
-    '''
+    """Raised when the parent (assigned via fork_child) has died."""
+
 
 class TerminateLoop(Exception):
-    '''Raised to terminate the current loop, closing the socket if there
-    is one associated with the loop.
-    '''
+    """Raised to terminate the current loop, closing the socket if there
+    is one associated with the loop."""
 
-CRLF = '\r\n'
+
+CRLF   = b'\r\n'
 BUFSIZ = 2 ** 14
+
 
 def until(sentinel):
     """Returns data from the underlying connection, terminated by sentinel.
@@ -191,19 +194,23 @@ class call(object):
                 r = self.f(self.client, *args, **kw)
             finally:
                 current_loop.connection_stack.pop()
-        except ConnectionClosed, e:
+        except ConnectionClosed as e:
             raise ClientConnectionClosed(str(e), addr=self.client.addr, port=self.client.port)
         return r
+
 
 current_loop = None
 
 ContinueNothing = object()
 
-def identity(cb): return cb
+
+def identity(cb):
+    return cb
 
 ids = itertools.count(1)
 
-class Loop(object):
+
+class Loop:
     def __init__(self, loop_callable, *args, **kw):
         self.loop_callable = loop_callable
         self.loop_label = str(self.loop_callable)
@@ -212,7 +219,7 @@ class Loop(object):
         self.keep_alive = False
         self.hub = runtime.current_app.hub
         self.app = runtime.current_app
-        self.id = ids.next()
+        self.id = next(ids)
         self.children = set()
         self.parent = None
         self.deaths = 0
@@ -282,13 +289,15 @@ class Loop(object):
         str(self.loop_callable))
 
     def clear_pending_events(self):
-        '''When a loop is rescheduled, cancel any other timers or waits.
-        '''
+        """When a loop is rescheduled, cancel any other timers or waits."""
+
         if self._wakeup_timer and self._wakeup_timer.pending:
             self._wakeup_timer.cancel()
+
         if self.connection_stack:
             conn = self.connection_stack[-1]
             conn.cleanup()
+
         self.fire_handlers = {}
         self.fire_due = False
         self.app.waits.clear(self)
@@ -315,8 +324,7 @@ class Loop(object):
     def label(self, label):
         self.loop_label = label
 
-    def first(self, sleep=None, waits=None,
-            receive_any=None, receive=None, until=None, until_eol=None, datagram=None):
+    def first(self, sleep=None, waits=None, receive_any=None, receive=None, until=None, until_eol=None, datagram=None):
         def marked_cb(kw):
             def deco(f):
                 def mark(d):
@@ -326,10 +334,11 @@ class Loop(object):
                 return mark
             return deco
 
-        f_sent = filter(None, (receive_any, receive, until, until_eol, datagram))
-        assert len(f_sent) <= 1,(
-        "only 1 of (receive_any, receive, until, until_eol, datagram) may be provided")
+        f_sent = list(filter(None, (receive_any, receive, until, until_eol, datagram)))
+        assert len(f_sent) <= 1, 'only 1 of (receive_any, receive, until, until_eol, datagram) may be provided'
+
         sentinel = None
+
         if receive_any:
             sentinel = buffer.BufAny
             tok = 'receive_any'
@@ -340,11 +349,12 @@ class Loop(object):
             sentinel = until
             tok = 'until'
         elif until_eol:
-            sentinel = "\r\n"
+            sentinel = b'\r\n'
             tok = 'until_eol'
         elif datagram:
             sentinel = _datagram
             tok = 'datagram'
+
         if sentinel:
             early_val = self._input_op(sentinel, marked_cb(tok))
             if early_val:
@@ -361,6 +371,7 @@ class Loop(object):
                     self.clear_pending_events()
                     self.reschedule_with_this_value((w, v.val))
                     break
+
         return self.dispatch()
 
     def connect(self, client, ip, sock, host, port, timeout=None):
@@ -406,11 +417,11 @@ class Loop(object):
         def error_callback():
             if cancel_timer is not None:
                 cancel_timer.cancel()
+
             self.hub.unregister(sock)
             self.hub.schedule(
-            lambda: self.wake(
-                ClientConnectionError("odd error on connect() (%s:%s)" % (host, port))
-                ))
+                lambda: self.wake(ClientConnectionError("odd error on connect() (%s:%s)" % (host, port)))
+            )
 
         def read_callback():
             # DJB on handling socket connection failures, from
@@ -427,22 +438,23 @@ class Loop(object):
             except socket.error:
                 try:
                     d = sock.recv(1)
-                except socket.error, e:
+                except socket.error as exc:
                     if e.errno == errno.ECONNREFUSED:
-                        d = ''
+                        d = b''
                     else:
                         d = None
 
-                if d != '':
+                if d != b'':
                     log.error("internal error: expected empty read on disconnected socket")
 
                 if cancel_timer is not None:
                     cancel_timer.cancel()
+
                 self.hub.unregister(sock)
                 self.hub.schedule(
-                lambda: self.wake(
-                    ClientConnectionError("Could not connect to remote host (%s:%s)" % (host, port))
-                    ))
+                    lambda: self.wake(ClientConnectionError("Could not connect to remote host (%s:%s)" % (host, port)))
+                )
+
                 return
 
         cancel_timer = None
@@ -530,9 +542,8 @@ class Loop(object):
         return self.wake(value)
 
     def wake(self, value=ContinueNothing):
-        '''Wake up this loop.  Called by the main hub to resume a loop
-        when it is rescheduled.
-        '''
+        """Wake up this loop.  Called by the main hub to resume a loop when it is rescheduled."""
+
         if self.tracked:
             self.start_clock()
 
@@ -558,11 +569,13 @@ class Loop(object):
     def input_op(self, sentinel_or_receive=None):
         if sentinel_or_receive is None:
             sentinel_or_receive = buffer.BufAny
+
         v = self._input_op(sentinel_or_receive)
+
         if v:
             return v
-        else:
-            return self.dispatch()
+
+        return self.dispatch()
 
     def _input_op(self, sentinel, cb_maker=identity):
         conn = self.check_connection()
@@ -602,7 +615,8 @@ class Loop(object):
     def _signal(self, sig, cb):
         self.hub.add_signal_handler(sig, cb)
 
-class Connection(object):
+
+class Connection:
     def __init__(self, sock, addr):
         self.hub = runtime.current_app.hub
         self.pipeline = pipeline.Pipeline()
@@ -622,16 +636,18 @@ class Connection(object):
         return self.buffer.check()
 
     def set_writable(self, val):
-        '''Set the associated socket writable.  Called when there is
+        """Set the associated socket writable.  Called when there is
         data on the outgoing pipeline ready to be delivered to the
-        remote host.
-        '''
+        remote host."""
+
         if self.closed:
             return
+
         if val and not self._writable:
             self.hub.enable_write(self.sock)
             self._writable = True
             return
+
         if not val and self._writable:
             self.hub.disable_write(self.sock)
             self._writable = False
@@ -645,22 +661,18 @@ class Connection(object):
         self.pipeline.close_request()
 
     def shutdown(self, remote_closed=False):
-        '''Clean up after a client disconnects or after
-        the connection_handler ends (and we disconnect).
-        '''
+        """Clean up after a client disconnects or after the connection_handler ends (and we disconnect)."""
+
         self.hub.unregister(self.sock)
         self.closed = True
         self.sock.close()
 
         if remote_closed and self.waiting_callback:
-            self.waiting_callback(
-            ConnectionClosed('Connection closed by remote host',
-            self.buffer.pop()))
+            self.waiting_callback(ConnectionClosed('Connection closed by remote host', self.buffer.pop()))
 
     def handle_write(self):
-        '''The low-level handler called by the event hub
-        when the socket is ready for writing.
-        '''
+        """The low-level handler called by the event hub when the socket is ready for writing."""
+
         if not self.pipeline.empty and not self.closed:
             try:
                 data = self.pipeline.read(BUFSIZ)
@@ -669,9 +681,8 @@ class Connection(object):
             else:
                 try:
                     bsent = self.sock.send(data)
-                except socket.error, e:
-                    code, s = e
-                    if code in (errno.EAGAIN, errno.EINTR):
+                except socket.error as exc:
+                    if exc.errno in (errno.EAGAIN, errno.EINTR):
                         self.pipeline.backup(data)
                         return
                     self.shutdown(True)
@@ -683,10 +694,8 @@ class Connection(object):
                 except SSL.SysCallError:
                     self.shutdown(True)
                 except:
-                    sys.stderr.write("Unknown Error on send():\n%s"
-                    % traceback.format_exc())
+                    log.trace().error('Unknown Error on send()')
                     self.shutdown(True)
-
                 else:
                     if bsent != len(data):
                         self.pipeline.backup(data[bsent:])
@@ -697,28 +706,26 @@ class Connection(object):
                         self.set_writable(False)
 
     def handle_read(self):
-        '''The low-level handler called by the event hub
-        when the socket is ready for reading.
-        '''
+        """The low-level handler called by the event hub when the socket is ready for reading."""
+
         if self.closed:
             return
+
         try:
             data = self.sock.recv(BUFSIZ)
-        except socket.error, e:
-            code, s = e
-            if code in (errno.EAGAIN, errno.EINTR):
+        except socket.error as exc:
+            if exc.errno in (errno.EAGAIN, errno.EINTR):
                 return
-            data = ''
+            data = b''
         except (SSL.WantReadError, SSL.WantWriteError, SSL.WantX509LookupError):
             return
         except SSL.ZeroReturnError:
-            data = ''
+            data = b''
         except SSL.SysCallError:
-            data = ''
+            data = b''
         except:
-            sys.stderr.write("Unknown Error on recv():\n%s"
-            % traceback.format_exc())
-            data = ''
+            log.trace().error('Unknown Error on recv()')
+            data = b''
 
         if not data:
             self.shutdown(True)
@@ -731,11 +738,17 @@ class Connection(object):
     def handle_error(self):
         self.shutdown(True)
 
-class Datagram(str):
-    def __new__(self, payload, addr):
-        inst = str.__new__(self, payload)
-        inst.addr = addr
-        return inst
+
+class Datagram(bytes):
+    def __new__(cls, payload, addr):
+        self = bytes.__new__(cls, payload)
+        self.addr = addr
+        return self
+
+    @property
+    def data(self):
+        return bytes(self)
+
 
 class UDPSocket(Connection):
     def __init__(self, parent, sock, ip=None, port=None):
@@ -752,28 +765,28 @@ class UDPSocket(Connection):
         self.outgoing.append(dgram)
 
     def check_incoming(self, condition, callback):
-        assert condition is datagram, "UDP supports datagram sentinels only"
+        assert condition is datagram, 'UDP supports datagram sentinels only'
+
         if self.incoming:
             value = self.incoming.popleft()
             self.parent.remote_addr = value.addr
             return value
+
         def _wrap(value=ContinueNothing):
             if isinstance(value, Datagram):
                 self.parent.remote_addr = value.addr
             return callback(value)
+
         return _wrap
 
     def handle_write(self):
-        '''The low-level handler called by the event hub
-        when the socket is ready for writing.
-        '''
+        """The low-level handler called by the event hub when the socket is ready for writing."""
         while self.outgoing:
             dgram = self.outgoing.popleft()
             try:
                 bsent = self.sock.sendto(dgram, dgram.addr)
-            except socket.error, e:
-                code, s = e
-                if code in (errno.EAGAIN, errno.EINTR):
+            except socket.error as exc:
+                if exc.errno in (errno.EAGAIN, errno.EINTR):
                     self.outgoing.appendleft(dgram)
                     return
                 self.shutdown(True)
@@ -785,37 +798,32 @@ class UDPSocket(Connection):
             except SSL.SysCallError:
                 self.shutdown(True)
             except:
-                sys.stderr.write("Unknown Error on send():\n%s"
-                % traceback.format_exc())
+                log.trace().error('Unknown Error on send()')
                 self.shutdown(True)
             else:
                 assert bsent == len(dgram), "complete datagram not sent!"
         self.set_writable(False)
 
     def handle_read(self):
-        '''The low-level handler called by the event hub
-        when the socket is ready for reading.
-        '''
+        """The low-level handler called by the event hub when the socket is ready for reading."""
         if self.closed:
             return
         try:
             data, addr = self.sock.recvfrom(BUFSIZ)
             dgram = Datagram(data, addr)
-        except socket.error, e:
-            code, s = e
-            if code in (errno.EAGAIN, errno.EINTR):
+        except socket.error as exc:
+            if exc.errno in (errno.EAGAIN, errno.EINTR):
                 return
-            dgram = Datagram('', (None, None))
+            dgram = Datagram(b'', (None, None))
         except (SSL.WantReadError, SSL.WantWriteError, SSL.WantX509LookupError):
             return
         except SSL.ZeroReturnError:
-            dgram = Datagram('', (None, None))
+            dgram = Datagram(b'', (None, None))
         except SSL.SysCallError:
-            dgram = Datagram('', (None, None))
+            dgram = Datagram(b'', (None, None))
         except:
-            sys.stderr.write("Unknown Error on recv():\n%s"
-            % traceback.format_exc())
-            dgram = Datagram('', (None, None))
+            log.trace().error('Unknown Error on recv()')
+            dgram = Datagram(b'', (None, None))
 
         if not dgram:
             self.shutdown(True)
@@ -831,12 +839,11 @@ class UDPSocket(Connection):
         self.set_writable(True)
 
     def shutdown(self, remote_closed=False):
-        '''Clean up after the connection_handler ends.'''
+        """Clean up after the connection_handler ends."""
+
         self.hub.unregister(self.sock)
         self.closed = True
         self.sock.close()
 
         if remote_closed and self.waiting_callback:
-            self.waiting_callback(
-                ConnectionClosed('Connection closed by remote host')
-            )
+            self.waiting_callback(ConnectionClosed('Connection closed by remote host'))

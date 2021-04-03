@@ -1,3 +1,5 @@
+from functools import partial
+
 from diesel import quickstart, quickstop, sleep
 from diesel.util.queue import Fanout
 from diesel.util.event import Countdown
@@ -13,11 +15,11 @@ def listener(x):
     with f.sub() as q:
         while True:
             v = q.get()
-            print '%s <- %s' % (x, v)
+            print('%s <- %s' % (x, v))
             cd.tick()
 
 def teller():
-    for x in xrange(EVENTS):
+    for x in range(EVENTS):
         sleep(2)
         f.pub(x)
 
@@ -25,6 +27,4 @@ def killer():
     cd.wait()
     quickstop()
 
-from functools import partial
-quickstart(killer, teller,
-        *[partial(listener, x) for x in xrange(LISTENERS)])
+quickstart(killer, teller, *(partial(listener, x) for x in range(LISTENERS)))

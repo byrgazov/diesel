@@ -2,18 +2,16 @@
 '''Simple udp echo server and client.
 '''
 import sys
-from diesel import (
-    UDPService, UDPClient, call, send, datagram, quickstart, receive,
-)
+from diesel import UDPService, UDPClient
+from diesel import call, send, datagram, quickstart, quickstop, receive
 
 
 class EchoClient(UDPClient):
     """A UDPClient example.
 
     Very much like a normal Client but it can only receive datagrams
-    from the wire.
+    from the wire."""
 
-    """
     @call
     def say(self, msg):
         send(msg)
@@ -25,24 +23,28 @@ def echo_server():
     Unlike a standard Service callback that represents a connection and takes
     the remote addr as the first function, a UDPService callback takes no
     arguments. It is responsible for receiving datagrams from the wire and
-    acting upon them.
+    acting upon them."""
 
-    """
     while True:
         data = receive(datagram)
-        send("you said %s" % data)
+        send(b'you said %b' % data)
 
 def echo_client():
     client = EchoClient('localhost', 8013)
     while True:
-        msg = raw_input("> ")
-        print client.say(msg)
+        msg = input('> ').encode()
+        if msg == b'quit':
+            break
+        print(client.say(msg))
+    quickstop()
 
 if len(sys.argv) == 2:
     if 'client' in sys.argv[1]:
         quickstart(echo_client)
         raise SystemExit
-    elif 'server' in sys.argv[1]:
+
+    if 'server' in sys.argv[1]:
         quickstart(UDPService(echo_server, 8013))
         raise SystemExit
-print 'usage: python %s (server|client)' % sys.argv[0]
+
+print('usage: python %s (server|client)' % sys.argv[0])

@@ -1,71 +1,78 @@
 from collections import defaultdict
 
-class StopWaitDispatch(Exception): pass
-class StaticValue(object):
-    def __init__(self, value):
-        self.value = value
+class StopWaitDispatch(Exception):
+	pass
 
-class EarlyValue(object):
-    def __init__(self, val):
-        self.val = val
+class StaticValue:
+	def __init__(self, value):
+		self.value = value
 
-class Waiter(object):
-    @property
-    def wait_id(self):
-        return str(hash(self))
+class EarlyValue:
+	def __init__(self, val):
+		self.val = val
 
-    def process_fire(self, given):
-        return StaticValue(given)
+class Waiter:
+	@property
+	def wait_id(self):
+		return str(hash(self))
 
-    def ready_early(self):
-        return False
+	def process_fire(self, given):
+		return StaticValue(given)
 
-class StringWaiter(str, Waiter):
-    @property
-    def wait_id(self):
-        return str(self)
+	def ready_early(self):
+		return False
+
+class BytesWaiter(bytes, Waiter):
+	@property
+	def wait_id(self):
+		return bytes(self)
 
 
-class WaitPool(object):
-    '''A structure that manages all `wait`ers, makes sure fired events
-    get to the right places.
-    '''
-    def __init__(self):
-        self.waits = defaultdict(set)
-        self.loop_refs = defaultdict(set)
+class WaitPool:
+	"""A structure that manages all `wait`ers, makes sure fired events
+	get to the right places."""
 
-    def wait(self, who, what):
-        if isinstance(what, basestring):
-            what = StringWaiter(what)
+	def __init__(self):
+		self.waits = defaultdict(set)
+		self.loop_refs = defaultdict(set)
 
-        if what.ready_early():
-            return EarlyValue(what.process_fire(None))
+	def wait(self, who, what):
+		if isinstance(what, bytes):
+			what = BytesWaiter(what)
 
-        self.waits[what.wait_id].add(who)
-        self.loop_refs[who].add(what)
-        return what.wait_id
+		if what.ready_early():
+			return EarlyValue(what.process_fire(None))
 
-    def fire(self, what, value):
-        if isinstance(what, basestring):
-            what = StringWaiter(what)
+		self.waits[what.wait_id].add(who)
+		self.loop_refs[who].add(what)
 
-        static = False
-        for handler in self.waits[what.wait_id]:
-            if handler.fire_due:
-                continue
-            if not static:
-                try:
-                    value = what.process_fire(value)
-                except StopWaitDispatch:
-                    break
-                if type(value) == StaticValue:
-                    static = True
-                    value = value.value
-            handler.fire_in(what.wait_id, value)
+		return what.wait_id
 
-    def clear(self, who):
-        for what in self.loop_refs[who]:
-            self.waits[what.wait_id].remove(who)
-            if not self.waits[what.wait_id]:
-                del self.waits[what.wait_id]
-        del self.loop_refs[who]
+	def fire(self, what, value):
+		if isinstance(what, str):
+			what = BytesWaiter(what)
+
+		static = False
+
+		for handler in self.waits[what.wait_id]:
+			if handler.fire_due:
+				continue
+
+			if not static:
+				try:
+					value = what.process_fire(value)
+				except StopWaitDispatch:
+					break
+
+				if type(value) == StaticValue:
+					static = True
+					value = value.value
+
+			handler.fire_in(what.wait_id, value)
+
+	def clear(self, who):
+		for what in self.loop_refs[who]:
+			self.waits[what.wait_id].remove(who)
+			if not self.waits[what.wait_id]:
+				del self.waits[what.wait_id]
+		del self.loop_refs[who]

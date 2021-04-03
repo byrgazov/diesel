@@ -23,16 +23,14 @@ local stdout of the process. All other output to stdout will be directed to the
 process's normal stdout.
 
 """
+
+import sys, os
+import signal
+import io
 import code
 import optparse
-import os
 import readline # for history feature side-effect
-import signal
 import struct
-import sys
-
-from cStringIO import StringIO
-
 
 import diesel
 
@@ -41,14 +39,17 @@ from diesel.util import debugtools
 
 port = 4299
 
+
 def install_console_signal_handler():
     """Call this function to provide a remote console in your app."""
     def connect_to_user_console(sig, frame):
         diesel.fork_from_thread(application_console_endpoint)
     signal.signal(signal.SIGTRAP, connect_to_user_console)
 
+
 class LocalConsole(code.InteractiveConsole):
     """A modified Python interpreter UI that talks to a remote console."""
+
     def runsource(self, source, filename=None):
         self.current_source = source.encode('utf-8')
         return code.InteractiveConsole.runsource(self, source, filename)
@@ -57,54 +58,63 @@ class LocalConsole(code.InteractiveConsole):
         if self.current_source:
             sz = len(self.current_source)
             header = struct.pack('>Q', sz)
-            diesel.send("%s%s" % (header, self.current_source))
+            diesel.send(b'%b%b' % (header, self.current_source))
             self.current_source = None
             header = diesel.receive(8)
             (sz,) = struct.unpack('>Q', header)
             if sz:
-                data = diesel.receive(sz)
-                print data.rstrip()
+                data = diesel.receive(sz).decode('utf-8')
+                print(data.rstrip())
+
 
 def console_for(pid):
     """Sends a SIGTRAP to the pid and returns a console UI handler.
 
     The return value is meant to be passed to a diesel.Service.
-
     """
+
     os.kill(pid, signal.SIGTRAP)
     banner = "Remote console PID=%d" % pid
+
     def interactive(addr):
         remote_console = LocalConsole()
         remote_console.interact(banner)
         diesel.quickstop()
+
     return interactive
 
 
 class RemoteConsoleService(diesel.Client):
     """Runs the backend console."""
+
     def __init__(self, *args, **kw):
         self.interpreter = BackendInterpreter({
-            'diesel':diesel,
-            'debugtools':debugtools,
+            'diesel'    : diesel,
+            'debugtools': debugtools,
         })
-        super(RemoteConsoleService, self).__init__(*args, **kw)
+        super().__init__(*args, **kw)
 
     @diesel.call
     def handle_command(self):
         header = diesel.receive(8)
         (sz,) = struct.unpack('>Q', header)
-        data = diesel.receive(sz)
+        data  = diesel.receive(sz)
         stdout_patch = StdoutDispatcher()
+
         with stdout_patch:
-            self.interpreter.runsource(data)
-        output = stdout_patch.contents
-        outsz = len(output)
+            self.interpreter.runsource(data.decode('utf-8'))
+
+        output = stdout_patch.contents.encode('utf-8')
+        outsz  = len(output)
         outheader = struct.pack('>Q', outsz)
-        diesel.send("%s%s" % (outheader, output))
+
+        diesel.send(b'%b%b' % (outheader, output))
+
 
 class BackendInterpreter(code.InteractiveInterpreter):
     def write(self, data):
         sys.stdout.write(data)
+
 
 def application_console_endpoint():
     """Connects to the console UI and runs until disconnected."""
@@ -123,7 +133,8 @@ def application_console_endpoint():
                     diesel.log.warning('Disconnected from local console')
                     break
 
-class StdoutDispatcher(object):
+
+class StdoutDispatcher:
     """Dispatches calls to stdout to fake or real file-like objects.
 
     The creator of an instance will receive the fake file-like object and
@@ -133,13 +144,12 @@ class StdoutDispatcher(object):
     def __init__(self):
         self.owning_loop = diesel.core.current_loop.id
         self._orig_stdout = sys.stdout
-        self._fake_stdout = StringIO()
+        self._fake_stdout = io.StringIO()
 
     def __getattr__(self, name):
         if diesel.core.current_loop.id == self.owning_loop:
             return getattr(self._fake_stdout, name)
-        else:
-            return getattr(self._orig_stdout, name)
+        return getattr(self._orig_stdout, name)
 
     def __enter__(self):
         sys.stdout = self
@@ -163,7 +173,7 @@ def main():
         parser.print_usage()
         raise SystemExit(1)
     if args[0] == 'dummy':
-        print "PID", os.getpid()
+        print("PID", os.getpid())
         def wait_for_signal():
             log = diesel.log.name('dummy')
             log.min_level = diesel.loglevels.INFO

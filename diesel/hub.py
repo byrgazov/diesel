@@ -1,11 +1,8 @@
-# vim:ts=4:sw=4:expandtab
-'''An event hub that supports sockets and timers, based
-on Python 2.6's select & epoll support.
-'''
-try:
-    import select26 as select
-except ImportError:
-    import select
+# -*- coding: utf-8 -*-
+
+"""An event hub that supports sockets and timers, based on Python 2.6's select & epoll support."""
+
+import select
 
 try:
     import pyev
@@ -18,68 +15,78 @@ import errno
 import fcntl
 import os
 import signal
-import thread
+import threading
 
 from collections import deque, defaultdict
 from operator import attrgetter
-from time import time
-from Queue import Queue, Empty
+from time  import time
+from queue import Queue, Empty
+
 
 TRIGGER_COMPARE = attrgetter('trigger_time')
+
 
 class ExistingSignalHandler(Exception):
     pass
 
-class Timer(object):
-    '''A timer is a promise to call some function at a future date.
-    '''
-    ALLOWANCE = 0.03 # If we're within 30ms, the timer is due
-    def __init__(self, hub, interval, f, *args, **kw):
-        self.hub = hub
-        self.trigger_time = time() + interval
-        self.f = f
-        self.args = args
-        self.kw = kw
-        self.pending = True
-        self.inq = False
-        self.hub_data = None
 
-    def cancel(self):
-        self.pending = False
-        if self.inq:
-            self.inq = False
-            self.hub.remove_timer(self)
-            self.hub = None
+class Timer:
+	"""A timer is a promise to call some function at a future date."""
 
-    def callback(self):
-        '''When the external entity checks this timer and determines
-        it's due, this function is called, which calls the original
-        callback.
-        '''
-        self.pending = False
-        self.inq = False
-        self.hub = None
-        return self.f(*self.args, **self.kw)
+	ALLOWANCE = 0.03 # If we're within 30ms, the timer is due
 
-    @property
-    def due(self):
-        '''Is it time to run this timer yet?
+	def __init__(self, hub, interval, f, *args, **kw):
+		self.hub = hub
+		self.trigger_time = time() + interval
+		self.f = f
+		self.args = args
+		self.kw = kw
+		self.pending = True
+		self.inq = False
+		self.hub_data = None
 
-        The allowance provides some give-and-take so that if a
-        sleep() delay comes back a little early, we still go.
-        '''
-        return (self.trigger_time - time()) < self.ALLOWANCE
+	def cancel(self):
+		self.pending = False
 
-class _PipeWrap(object):
-    def __init__(self, p):
-        self.p = p
+		if self.inq:
+			self.inq = False
+			self.hub.remove_timer(self)
+			self.hub = None
 
-    def fileno(self):
-        return self.p
+	def callback(self):
+		"""When the external entity checks this timer and determines
+		it's due, this function is called, which calls the original
+		callback."""
 
-class IntWrap(_PipeWrap): pass
+		self.pending = False
+		self.inq = False
+		self.hub = None
 
-class AbstractEventHub(object):
+		return self.f(*self.args, **self.kw)
+
+	@property
+	def due(self):
+		"""Is it time to run this timer yet?
+
+		The allowance provides some give-and-take so that if a
+		sleep() delay comes back a little early, we still go."""
+
+		return (self.trigger_time - time()) < self.ALLOWANCE
+
+
+class _PipeWrap:
+	def __init__(self, p):
+		self.p = p
+
+	def fileno(self):
+		return self.p
+
+
+class IntWrap(_PipeWrap):
+	pass
+
+
+class AbstractEventHub:
     def __init__(self):
         self.timers = []
         self.new_timers = []
@@ -95,6 +102,7 @@ class AbstractEventHub(object):
         self._t_recv, self._t_wakeup = os.pipe()
         fcntl.fcntl(self._t_recv, fcntl.F_SETFL, os.O_NONBLOCK)
         fcntl.fcntl(self._t_wakeup, fcntl.F_SETFL, os.O_NONBLOCK)
+
         self.thread_comp_in = Queue()
 
         def handle_thread_done():
@@ -109,6 +117,7 @@ class AbstractEventHub(object):
                     break
                 else:
                     c(v)
+
         self.register(_PipeWrap(self._t_recv), handle_thread_done, None, None)
 
     def remove_timer(self, t):
@@ -121,16 +130,19 @@ class AbstractEventHub(object):
         def wrap():
             try:
                 res = f(*args, **kw)
-            except Exception, e:
+            except Exception as e:
                 self.thread_comp_in.put((reschedule, e))
             else:
                 self.thread_comp_in.put((reschedule, res))
             self.wake_from_other_thread()
-        thread.start_new_thread(wrap, ())
+
+        thread = threading.Thread(target=wrap)
+        thread.setDaemon(True)  # @todo: [bw] ???
+        thread.start()
 
     def wake_from_other_thread(self):
         try:
-            os.write(self._t_wakeup, '\0')
+            os.write(self._t_wakeup, b'\0')
         except IOError:
             pass
 
@@ -198,7 +210,6 @@ class AbstractEventHub(object):
         if fd in self.fdmap:
             fn = self.fdmap.pop(fd)
             del self.events[fn]
-
             self._remove_fd(fd)
 
     def _remove_fd(self, fd):
@@ -211,120 +222,124 @@ class AbstractEventHub(object):
     def describe(self):
         raise NotImplementedError()
 
+
 class EPollEventHub(AbstractEventHub):
-    '''A epoll-based hub.
-    '''
-    def __init__(self):
-        self.epoll = select.epoll()
-        self.signal_handlers = defaultdict(deque)
-        super(EPollEventHub, self).__init__()
+	"""A epoll-based hub."""
 
-    @property
-    def describe(self):
-        return "hand-rolled select.epoll"
+	def __init__(self):
+		self.epoll = select.epoll()
+		self.signal_handlers = defaultdict(deque)
+		super().__init__()
 
-    def handle_events(self):
-        '''Run one pass of event handling.
+	@property
+	def describe(self):
+		return 'hand-rolled select.epoll'
 
-        epoll() is called, with a timeout equal to the next-scheduled
-        timer.  When epoll returns, all fd-related events (if any) are
-        handled, and timers are handled as well.
-        '''
-        while self.run_now and self.run:
-            self.run_now.popleft()()
+	def handle_events(self):
+		"""Run one pass of event handling.
 
-        if self.new_timers:
-            for tr in self.new_timers:
-                if tr.pending:
-                    tr.inq = True
-                    self.timers.append(tr)
-            self.timers.sort(key=TRIGGER_COMPARE, reverse=True)
-            self.new_timers = []
+		epoll() is called, with a timeout equal to the next-scheduled
+		timer.  When epoll returns, all fd-related events (if any) are
+		handled, and timers are handled as well.
+		"""
 
-        tm = time()
-        timeout = (self.timers[-1].trigger_time - tm) if self.timers else 1e6
-        # epoll, etc, limit to 2^^31/1000 or OverflowError
-        timeout = min(timeout, 1e6)
-        if timeout < 0 or self.reschedule:
-            timeout = 0
+		while self.run_now and self.run:
+			self.run_now.popleft()()
 
-        # Run timers first, to try to nail their timings
-        while self.timers and self.timers[-1].due:
-            t = self.timers.pop()
-            if t.pending:
-                t.callback()
-                while self.run_now and self.run:
-                    self.run_now.popleft()()
-                if not self.run:
-                    return
+		if self.new_timers:
+			for tr in self.new_timers:
+				if tr.pending:
+					tr.inq = True
+					self.timers.append(tr)
+			self.timers.sort(key=TRIGGER_COMPARE, reverse=True)
+			self.new_timers = []
 
-        # Handle all socket I/O
-        try:
-            for (fd, evtype) in self.epoll.poll(timeout):
-                fd_id = self.fd_ids[fd]
-                if evtype & select.EPOLLIN or evtype & select.EPOLLPRI:
-                    self.events[fd][0]()
-                elif evtype & select.EPOLLERR or evtype & select.EPOLLHUP:
-                    self.events[fd][2]()
+		tm = time()
+		timeout = (self.timers[-1].trigger_time - tm) if self.timers else 1e6
+		# epoll, etc, limit to 2^^31/1000 or OverflowError
+		timeout = min(timeout, 1e6)
+		if timeout < 0 or self.reschedule:
+			timeout = 0
 
-                # The fd could have been reassigned to a new socket or removed
-                # when running the callbacks immediately above. Only use it if
-                # neither of those is the case.
-                use_fd = fd_id == self.fd_ids[fd] and fd in self.events
-                if evtype & select.EPOLLOUT and use_fd:
-                    self.events[fd][1]()
+		# Run timers first, to try to nail their timings
+		while self.timers and self.timers[-1].due:
+			t = self.timers.pop()
+			if t.pending:
+				t.callback()
+				while self.run_now and self.run:
+					self.run_now.popleft()()
+				if not self.run:
+					return
 
-                while self.run_now and self.run:
-                    self.run_now.popleft()()
+		# Handle all socket I/O
+		try:
+			for (fd, evtype) in self.epoll.poll(timeout):
+				fd_id = self.fd_ids[fd]
 
-                if not self.run:
-                    return
-        except IOError, e:
-            if e.errno == errno.EINTR:
-                while self.run_now and self.run:
-                    self.run_now.popleft()()
-            else:
-                raise
+				if evtype & select.EPOLLIN or evtype & select.EPOLLPRI:
+					self.events[fd][0]()
 
-        self.run_now = self.reschedule
-        self.reschedule = deque()
+				elif evtype & select.EPOLLERR or evtype & select.EPOLLHUP:
+					self.events[fd][2]()
 
-    def add_signal_handler(self, sig, callback):
-        existing = signal.getsignal(sig)
-        if not existing:
-            signal.signal(sig, self._report_signal)
-        elif existing != self._report_signal:
-            raise ExistingSignalHandler(existing)
-        self.signal_handlers[sig].append(callback)
+				# The fd could have been reassigned to a new socket or removed
+				# when running the callbacks immediately above. Only use it if
+				# neither of those is the case.
+				use_fd = fd_id == self.fd_ids[fd] and fd in self.events
+				if evtype & select.EPOLLOUT and use_fd:
+					try:
+						self.events[fd][1]()
+					except Exception:
+						# @xxx: [bw] если в обработчике выше ошибка, то это приведёт (может) к бесконечному циклу вывода ошибок
+						#       я вызываю другой обработчик в таком случае, в надежде, что он что-нибудь сделает (закроет сокет)
+						self.events[fd][2]()
+						raise
 
-    def _report_signal(self, sig, frame):
-        for callback in self.signal_handlers[sig]:
-            self.run_now.append(callback)
-        self.signal_handlers[sig] = deque()
-        signal.signal(sig, signal.SIG_DFL)
+				while self.run_now and self.run:
+					self.run_now.popleft()()
 
-    def _add_fd(self, fd):
-        '''Add this socket to the list of sockets used in the
-        poll call.
-        '''
-        self.epoll.register(fd, select.EPOLLIN | select.EPOLLPRI)
+				if not self.run:
+					return
+		except IOError as e:
+			if e.errno == errno.EINTR:
+				while self.run_now and self.run:
+					self.run_now.popleft()()
+			else:
+				raise
 
-    def enable_write(self, fd):
-        '''Enable write polling and the write callback.
-        '''
-        self.epoll.modify(
-                fd, select.EPOLLIN | select.EPOLLPRI | select.EPOLLOUT)
+		self.run_now = self.reschedule
+		self.reschedule = deque()
 
-    def disable_write(self, fd):
-        '''Disable write polling and the write callback.
-        '''
-        self.epoll.modify(fd, select.EPOLLIN | select.EPOLLPRI)
+	def add_signal_handler(self, sig, callback):
+		existing = signal.getsignal(sig)
+		if not existing:
+			signal.signal(sig, self._report_signal)
+		elif existing != self._report_signal:
+			raise ExistingSignalHandler(existing)
+		self.signal_handlers[sig].append(callback)
 
-    def _remove_fd(self, fd):
-        '''Remove this socket from the list of sockets the
-        hub is polling on.
-        '''
-        self.epoll.unregister(fd)
+	def _report_signal(self, sig, frame):
+		for callback in self.signal_handlers[sig]:
+			self.run_now.append(callback)
+		self.signal_handlers[sig] = deque()
+		signal.signal(sig, signal.SIG_DFL)
+
+	def _add_fd(self, fd):
+		"""Add this socket to the list of sockets used in the poll call."""
+		self.epoll.register(fd, select.EPOLLIN | select.EPOLLPRI)
+
+	def enable_write(self, fd):
+		"""Enable write polling and the write callback."""
+		self.epoll.modify(fd, select.EPOLLIN | select.EPOLLPRI | select.EPOLLOUT)
+
+	def disable_write(self, fd):
+		"""Disable write polling and the write callback."""
+		self.epoll.modify(fd, select.EPOLLIN | select.EPOLLPRI)
+
+	def _remove_fd(self, fd):
+		"""Remove this socket from the list of sockets the hub is polling on."""
+		self.epoll.unregister(fd)
+
 
 class LibEvHub(AbstractEventHub):
     def __init__(self):

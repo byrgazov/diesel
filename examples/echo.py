@@ -1,14 +1,17 @@
-# vim:ts=4:sw=4:expandtab
-'''Simple echo server.
-'''
+"""Simple echo server.
+
+$ python3 echo.py
+$ nc -C localhost 8013
+"""
+
 from diesel import Application, Service, until_eol, send
 
 def hi_server(addr):
     while 1:
         inp = until_eol()
-        if inp.strip() == "quit":
+        if inp.strip() == b'quit':
             break
-        send("you said %s" % inp)
+        send(b'you said ' + inp)
 
 app = Application()
 app.add_service(Service(hi_server, 8013))
