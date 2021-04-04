@@ -22,10 +22,10 @@ class Waiter:
 	def ready_early(self):
 		return False
 
-class BytesWaiter(bytes, Waiter):
+class StringWaiter(str, Waiter):
 	@property
 	def wait_id(self):
-		return bytes(self)
+		return str(self)
 
 
 class WaitPool:
@@ -37,8 +37,8 @@ class WaitPool:
 		self.loop_refs = defaultdict(set)
 
 	def wait(self, who, what):
-		if isinstance(what, bytes):
-			what = BytesWaiter(what)
+		if isinstance(what, str):
+			what = StringWaiter(what)
 
 		if what.ready_early():
 			return EarlyValue(what.process_fire(None))
@@ -50,7 +50,7 @@ class WaitPool:
 
 	def fire(self, what, value):
 		if isinstance(what, str):
-			what = BytesWaiter(what)
+			what = StringWaiter(what)
 
 		static = False
 

@@ -1,5 +1,5 @@
 
-from diesel.events import Waiter, WaitPool, EarlyValue, BytesWaiter
+from diesel.events import Waiter, WaitPool, EarlyValue, StringWaiter
 
 
 class EarlyReadyWaiter(Waiter):
@@ -14,15 +14,15 @@ class Who:
     """Someone who is waiting..."""
 
 
-class TestBytesWaiters:
-    def test_bytes_waiters_for_the_same_bytes_have_the_same_wait_id(self):
-        s1 = BytesWaiter(b'asdf')
-        s2 = BytesWaiter(b'asdf')
+class TestStringWaiters:
+    def test_string_waiters_for_the_same_strings_have_the_same_wait_id(self):
+        s1 = StringWaiter('asdf')
+        s2 = StringWaiter('asdf')
         assert s1.wait_id == s2.wait_id
 
-    def test_bytes_waiters_for_different_bytes_have_different_wait_ids(self):
-        s1 = BytesWaiter(b'asdf')
-        s2 = BytesWaiter(b'jkl;')
+    def test_string_waiters_for_different_strings_have_different_wait_ids(self):
+        s1 = StringWaiter('asdf')
+        s2 = StringWaiter('jkl;')
         assert s1.wait_id != s2.wait_id
 
 
@@ -44,11 +44,11 @@ class TestWaitPoolWithEarlyReturn:
         assert self.who not in self.pool.loop_refs
 
 
-class TestWaitPoolWithBytesWaiter:
+class TestWaitPoolWithStringWaiter:
     def setup(self):
         self.pool = WaitPool()
         self.who = Who()
-        self.wait_for = b'a bytes'
+        self.wait_for = 'a string'
         self.result = self.pool.wait(self.who, self.wait_for)
 
     def test_the_waiting_entity_is_added_to_wait_pool(self):
@@ -56,9 +56,9 @@ class TestWaitPoolWithBytesWaiter:
         w = self.pool.waits[self.wait_for].pop()
         assert w is self.who
 
-    def test_BytesWaiter_added_to_wait_pool(self):
+    def test_StringWaiter_added_to_wait_pool(self):
         v = self.pool.loop_refs[self.who].pop()
-        assert isinstance(v, BytesWaiter)
+        assert isinstance(v, StringWaiter)
 
     def test_result_is_wait_id(self):
         assert self.result == self.wait_for
