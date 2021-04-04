@@ -4,10 +4,7 @@ import select
 import subprocess
 import setuptools
 
-assert sys.version_info >= (3, 5), 'Diesel requires python 3.5'
-
-#if os.system("which palmc > /dev/null 2>&1") == 0:
-#	os.system("palmc ./diesel/protocols ./diesel/protocols")
+assert sys.version_info >= (3, 5), 'Diesel requires Python 3.5'
 
 additional_requires = []
 
@@ -40,16 +37,16 @@ An HTTP/1.1+WSGI+WebSockets implementation is included.
 
 Other bundled protocols include MongoDB, Riak, and Redis client libraries.
 """,
-		url='http://diesel.io',
-		packages=[
+		url = 'http://diesel.io',
+		packages = [
 			'diesel',
 			'diesel.protocols',
 			'diesel.util',
 			'diesel.util.patches',
 			'diesel.protocols.http',
 		],
-		scripts=['examples/dhttpd'],
-		entry_points={
+		scripts = ['examples/dhttpd'],
+		entry_points = {
 			'console_scripts': [
 				'dpython = diesel.interactive:python',
 				'idpython = diesel.interactive:ipython',
@@ -57,23 +54,22 @@ Other bundled protocols include MongoDB, Riak, and Redis client libraries.
 				'dconsole = diesel.console:main',
 			],
 		},
-		install_requires=[
+		install_requires = [
 			'greenlet',
 			'twiggy',
 			'pyopenssl',
-#			'flask',
 			'werkzeug',
 			'http-parser >= 0.7.12',
 			'dnspython',
 		] + additional_requires,
 		cmdclass = {
-			'build_protos': build_protos,
+			'build_pb2': build_pb2,
 		},
 	)
 
 
-class build_protos(setuptools.Command):
-	description = 'build_protos'
+class build_pb2(setuptools.Command):
+	description = 'build_pb2'
 
 	user_options = [
 		('inplace', 'i', 'ignore build-lib and put compiled extensions into the source directory '\
@@ -102,7 +98,7 @@ class build_protos(setuptools.Command):
 #		if self.inplace:
 #			build_py = self.get_finalized_command('build_py')
 #			pkgdir   = os.path.abspath(build_py.get_package_dir('diesel'))
-#			builddir = os.path.join(pkgdir, 'protos')
+#			builddir = os.path.join(pkgdir, 'pb2')
 #		else:
 #			builddir = os.path.join(self.build_lib, 'nyokong', 'borders')
 #			os.makedirs(builddir, 0o750, True)

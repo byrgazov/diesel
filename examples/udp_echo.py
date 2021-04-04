@@ -31,12 +31,16 @@ def echo_server():
 
 def echo_client():
     client = EchoClient('localhost', 8013)
-    while True:
-        msg = input('> ').encode()
-        if msg == b'quit':
-            break
-        print(client.say(msg))
-    quickstop()
+    try:
+        while True:
+            msg = input('> ').encode()
+            if msg == b'quit':
+                break
+            print(client.say(msg))
+    except EOFError:
+        pass
+    finally:
+        quickstop()
 
 if len(sys.argv) == 2:
     if 'client' in sys.argv[1]:
